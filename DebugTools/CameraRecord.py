@@ -10,6 +10,7 @@ camera.start_recording(
     motion_output='motion.data',
     resize=(1040, 1040)
 )
-camera.wait_recording(40)
+print("INBETWEENER")
+camera.wait_recording(5)
 camera.stop_recording()
 print("Done.")

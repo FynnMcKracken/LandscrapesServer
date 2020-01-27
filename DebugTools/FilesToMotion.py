@@ -38,6 +38,6 @@ for frame in range(frames):
     #heatmap_blurred = sp.ndimage.filters.gaussian_filter(heatmap, sigma, mode='constant')
     #resized = cv2.resize(heatmap_blurred, dsize=(65, 65))
     img = Image.fromarray(np.uint8(cm.jet(heatmap) * 255))
-    filename = 'frame%03d.png' % frame
+    filename = 'frame%04d.png' % frame
     print('Writing %s' % filename)
     img.save(filename)

@@ -1,4 +1,5 @@
 import numpy as np
+import picamera
 import picamera.array
 import socket
 import itertools
@@ -8,6 +9,8 @@ from threading import Condition
 import scipy as sp
 import scipy.ndimage
 import cv2
+from PIL import Image
+from matplotlib import cm
 
 #hostMACAddressBluetooth = 'DC:A6:32:2C:68:23'
 #portBluetooth = 3
@@ -29,31 +32,29 @@ cols = (width + 15) // 16
 cols += 1  # = 104
 rows = (height + 15) // 16  # = 77
 
-#cols = 65
-#rows = 65
-
-SRV_CMD_NEXT_FRAME = 0x0
-SRV_CMD_QUIT = 0x1
-SRV_CMD_SHUTDOWN = 0x2
-
 sigma = [5.0, 5.0]
+frame = 0
 
-global _heatmap
-_heatmap = np.full((rows, cols), 0.0, dtype=np.float32)
+# Due to the last two columns having faulty motion data at times we ignore those,
+# we will fix this later by scaling the heatmap to our desired resolution
+_heatmap = np.full((rows, cols-2), 0.5, dtype=np.float32)
+
 
 class DetectMotion(picamera.array.PiMotionAnalysis):
     def __init__(self, c):
         super(DetectMotion, self).__init__(c)
         self.condition = Condition()
-        self.heatmap = np.full((rows, cols), 0.0, dtype=np.float32)
+        self.heatmap = np.full((rows, cols), 0.5, dtype=np.float32)
 
     def analyze(self, a):
         data = np.sqrt(
-            np.square(a['x'].astype(np.float32)) +
-            np.square(a['y'].astype(np.float32))
-            ).clip(0, 255) / 255
+            np.square(a['x'].astype(np.float)) +
+            np.square(a['y'].astype(np.float))
+            ).clip(0, 255).astype(np.uint8)
         for x, y in itertools.product(range(rows), range(cols)):
-            if data[x, y] > np.float32(0.3):
+            if y >= (cols - 2):
+                continue
+            if data[x, y] > 30:
                 self.heatmap[x, y] += np.float32(0.1)
             else:
                 self.heatmap[x, y] *= np.float32(0.99)
@@ -69,17 +70,20 @@ print("Client connected")
 
 
 async def periodic():
-    global _heatmap
-    #await asyncio.sleep(3)
+    global _heatmap, frame
     while True:
         await asyncio.sleep(3)
-        heatmap_blurred = sp.ndimage.filters.gaussian_filter(_heatmap, sigma, mode='constant')
+        heatmap_blurred = sp.ndimage.filters.gaussian_filter(_heatmap, sigma)
         heatmap_resized = cv2.resize(heatmap_blurred, dsize=(65, 65))
         buffer = struct.pack("4225f", *(heatmap_resized.flatten()))
+        img = Image.fromarray(np.uint8(cm.jet(heatmap_resized) * 255))
+        filename = 'frame%04d.png' % frame
+        print('Writing %s' % filename)
+        img.save(filename)
+        frame += 1
         print("Sending %d bytes" % len(buffer))
         print(buffer)
         client.sendall(buffer)
-
 
 
 async def analyze():
